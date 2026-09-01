@@ -1,13 +1,13 @@
-# Arquitectura de Storage — Project Knowledge Hub
+# Repositorio IA-Ready — Project Knowledge Hub
 ## Tecnológico de Monterrey · Gobernanza de Aplicativos · VPAF · OmniSys
 
 ---
 
 ## 1. Propósito
 
-Este documento define la estructura de almacenamiento en **Azure Blob Storage** donde viven los activos de conocimiento del Project Knowledge Hub (PKH), sus metadatos y los índices para búsqueda semántica.
+Este documento define el **Repositorio IA-Ready**: la estructura de carpetas en **Azure Blob Storage** donde se almacenan los activos de conocimiento del PKH, el punto donde se insertan los metadatos generados por el clasificador y el origen desde el cual los usuarios del equipo consultan el conocimiento del proyecto directamente desde **Microsoft Teams**.
 
-El objetivo es que cualquier solución RAG, copiloto o agente que consuma este storage encuentre únicamente activos aprobados, con metadatos completos y trazabilidad verificada — nunca borradores, nunca activos obsoletos, nunca datos restringidos.
+El repositorio garantiza que Teams (vía Copilot Studio) encuentre únicamente activos aprobados, con metadatos completos y trazabilidad verificada — nunca borradores, nunca activos obsoletos, nunca datos restringidos.
 
 ---
 
@@ -53,15 +53,16 @@ El objetivo es que cualquier solución RAG, copiloto o agente que consuma este s
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│                     CONSULTA                                │
+│                     CONSULTA DESDE TEAMS                    │
 │                                                             │
-│  Usuario (Teams / App web)                                  │
+│  Usuario pregunta en Microsoft Teams                        │
 │         │                                                   │
 │         ▼                                                   │
-│  Copilot Studio                                             │
+│  Copilot Studio (bot integrado al canal de Teams)           │
 │         │                                                   │
 │         ▼                                                   │
 │  Azure AI Search  ←──── búsqueda híbrida (vector + keyword) │
+│  filtros: dominio · tipo · estado · fase · confidencialidad │
 │         │                                                   │
 │         ▼                                                   │
 │  Azure OpenAI GPT-4o  ←── genera respuesta con contexto     │
@@ -82,60 +83,116 @@ El objetivo es que cualquier solución RAG, copiloto o agente que consuma este s
 
 ---
 
-## 3. Estructura de contenedores
+## 4. ¿Cómo se determina el dominio de destino?
+
+El clasificador IA-Ready usa la **Opción C: inferencia + confirmación humana**:
+
+1. Claude analiza el contenido del documento y extrae `contexto.dominio` durante el ETL
+2. El dominio inferido aparece en la ficha de validación — el usuario lo ve antes de aprobar
+3. Si el dominio es correcto, el usuario aprueba sin cambiar nada
+4. Si el dominio es incorrecto, el usuario lo corrige en la misma ficha antes de aprobar
+5. El dominio confirmado (inferido o corregido) determina la carpeta de destino en Blob Storage: `curated/{dominio}/{proyecto}/{ID}/`
+
+Esto garantiza que el flujo no se interrumpe en casos claros, pero siempre hay supervisión humana antes de que el activo entre al repositorio.
+
+---
+
+## 5. Estructura de contenedores
+
+El Tec de Monterrey tiene documentos de múltiples dominios (procesos, gobierno de datos, tecnología, integraciones, etc.) que son transversales a proyectos. Por eso la estructura agrega un nivel de `{dominio}/` antes del `{proyecto-id}/`, lo que permite filtrar y gobernar por dominio sin mezclar activos de naturaleza distinta.
 
 ```
 azure-blob-storage/
 │
-├── raw/                          # Documentos originales sin procesar
-│   └── {proyecto-id}/
-│       └── {año-mes}/
-│           └── {ID-ACTIVO}_nombre-documento.docx
+├── raw/                                   # Documentos originales sin procesar
+│   └── {dominio}/
+│       └── {proyecto-id}/
+│           └── {año-mes}/
+│               └── {ID-ACTIVO}_nombre-documento.docx
 │
-├── curated/                      # Activos aprobados — única fuente del RAG
-│   └── {proyecto-id}/
-│       └── {ID-ACTIVO}/
-│           ├── documento.docx    # Archivo original
-│           ├── metadata.json     # Ficha PKH completa (generada por esta POC)
-│           └── chunks/           # Fragmentos listos para indexar
-│               ├── chunk_001.json
-│               ├── chunk_002.json
-│               └── ...
+├── curated/                               # Activos aprobados — única fuente del RAG
+│   └── {dominio}/
+│       └── {proyecto-id}/
+│           └── {ID-ACTIVO}/
+│               ├── documento.docx         # Archivo original
+│               ├── metadata.json          # Ficha PKH completa (generada por esta POC)
+│               └── chunks/               # Fragmentos listos para indexar
+│                   ├── chunk_001.json
+│                   ├── chunk_002.json
+│                   └── ...
 │
-├── metadata/                     # Índice central por proyecto
-│   └── {proyecto-id}/
-│       ├── catalogo.json         # Todos los activos registrados (equivale a KH2)
-│       ├── trazabilidad.json     # Relaciones entre activos
-│       └── taxonomy.json         # Taxonomía vigente del proyecto
+├── metadata/                              # Índice central por dominio y proyecto
+│   └── {dominio}/
+│       └── {proyecto-id}/
+│           ├── catalogo.json             # Todos los activos registrados (equivale a KH2)
+│           ├── trazabilidad.json         # Relaciones entre activos
+│           └── taxonomy.json            # Taxonomía vigente del proyecto
 │
-├── indexes/                      # Insumos para Azure AI Search
-│   └── {proyecto-id}/
-│       ├── search-index.json     # Definición del índice
-│       └── embeddings/
-│           └── {ID-ACTIVO}.json  # Vector del activo
+├── indexes/                              # Insumos para Azure AI Search
+│   └── {dominio}/
+│       └── {proyecto-id}/
+│           ├── search-index.json         # Definición del índice
+│           └── embeddings/
+│               └── {ID-ACTIVO}.json     # Vector del activo
 │
-└── archive/                      # Activos obsoletos — excluidos del índice
-    └── {proyecto-id}/
-        └── {ID-ACTIVO}/
-            ├── documento.docx
-            └── metadata.json
+└── archive/                              # Activos obsoletos — excluidos del índice
+    └── {dominio}/
+        └── {proyecto-id}/
+            └── {ID-ACTIVO}/
+                ├── documento.docx
+                └── metadata.json
 ```
+
+### Dominios del Tec de Monterrey
+
+| Dominio (carpeta) | Qué contiene |
+|---|---|
+| `gobierno-aplicativos` | Procesos de alta/baja, modelo operativo, gobernanza VPAF |
+| `gobierno-datos` | Políticas de datos, catálogos, lineamientos de calidad |
+| `gobierno-integraciones` | Arquitectura de integraciones, APIs, contratos de servicio |
+| `tecnologia` | Estándares técnicos, arquitectura de referencia, decisiones tecnológicas |
+| `procesos` | Procesos institucionales, procedimientos, manuales operativos |
+| `seguridad` | Políticas de seguridad, controles, evidencias de cumplimiento |
 
 ---
 
-## 4. Convención de nombres
+## 5. Convención de nombres
 
 | Elemento | Formato | Ejemplo |
 |---|---|---|
+| dominio | kebab-case, sin espacios | `gobierno-datos` |
 | proyecto-id | kebab-case, sin espacios | `gobernanza-vpaf` |
 | ID de activo | prefijo PKH + 3 dígitos | `ENT-001`, `REQ-004` |
 | Carpeta de activo | igual al ID | `ENT-001/` |
-| Archivo de metadatos | siempre `metadata.json` | `curated/gobernanza-vpaf/ENT-001/metadata.json` |
+| Archivo de metadatos | siempre `metadata.json` | `curated/gobierno-aplicativos/gobernanza-vpaf/ENT-001/metadata.json` |
 | Chunks | `chunk_NNN.json` con 3 dígitos | `chunk_001.json` |
 
 ---
 
-## 5. Esquema del metadata.json
+## 6. Ventajas del Repositorio IA-Ready
+
+**Para el RAG y la búsqueda**
+- Cada activo llega al índice con metadatos completos extraídos en el ETL — el modelo no necesita inferir qué es el documento ni de qué fase es, ya lo sabe antes de buscar.
+- Los filtros por `dominio`, `tipo`, `estado`, `fase` y `confidencialidad` acotan el universo antes del vector search, lo que reduce ruido y mejora la precisión de las respuestas.
+- `Restringida` nunca llega al índice — la exclusión es estructural, no depende de una instrucción al modelo.
+
+**Para el gobierno del conocimiento**
+- Un documento sin `metadata.json` completo no puede entrar a `curated/` — la calidad es un requisito de entrada, no una revisión posterior.
+- El ID del activo es la carpeta: aunque el documento cambie de nombre o versión, la ruta en el repositorio no cambia y las relaciones entre activos se mantienen.
+- `archive/` separa físicamente los activos obsoletos — nunca compiten con los vigentes en el índice.
+
+**Para el Tec de Monterrey específicamente**
+- El nivel de `{dominio}/` permite que gobierno de datos, gobierno de integraciones, tecnología y procesos coexistan en el mismo storage sin mezclarse.
+- Un mismo activo puede relacionarse con activos de otro dominio (ej. un proceso que `depende de` una decisión tecnológica) sin mover archivos — la relación vive en el `metadata.json`.
+- El catálogo por dominio (`catalogo.json`) es el equivalente digital del KH2 del Tec, siempre actualizado y consultable por máquina.
+
+**Para el equipo**
+- El copiloto en Teams responde con fuente (`blob_path`) e ID de activo — el usuario sabe exactamente qué documento respalda la respuesta.
+- El nivel de confianza del ETL viaja con el chunk: si un campo fue inferido con baja confianza, el copiloto puede advertirlo.
+
+---
+
+## 7. Esquema del metadata.json
 
 Cada activo en `curated/` tiene un `metadata.json` con la ficha completa generada por el clasificador IA-Ready:
 
@@ -164,7 +221,7 @@ Cada activo en `curated/` tiene un `metadata.json` con la ficha completa generad
     { "tipo": "tiene evidencia", "nombre": "EVI-010" },
     { "tipo": "deriva de", "nombre": "DEC-002" }
   ],
-  "blob_path": "curated/gobernanza-vpaf/ENT-001/documento.docx",
+  "blob_path": "curated/gobierno-aplicativos/gobernanza-vpaf/ENT-001/documento.docx",
   "confianza": {
     "tipo": 95,
     "estado": 90,
@@ -179,7 +236,7 @@ Cada activo en `curated/` tiene un `metadata.json` con la ficha completa generad
 
 ---
 
-## 6. Esquema del chunk
+## 8. Esquema del chunk
 
 Cada fragmento en `chunks/` incluye el texto y los metadatos necesarios para que Azure AI Search lo recupere con contexto:
 
@@ -187,6 +244,7 @@ Cada fragmento en `chunks/` incluye el texto y los metadatos necesarios para que
 {
   "chunk_id": "ENT-001_001",
   "activo_id": "ENT-001",
+  "dominio": "gobierno-aplicativos",
   "proyecto_id": "gobernanza-vpaf",
   "tipo": "Entregable",
   "estado": "Aprobado",
@@ -194,9 +252,9 @@ Cada fragmento en `chunks/` incluye el texto y los metadatos necesarios para que
   "fase": "Fase 1",
   "responsable": "Architect",
   "fecha": "2026-07-15",
-  "dominio": "Gobernanza de Aplicativos",
+  "dominio_semantico": "Gobernanza de Aplicativos",
   "texto": "El modelo operativo define los 9 pilares de gobierno...",
-  "blob_path": "curated/gobernanza-vpaf/ENT-001/documento.docx",
+  "blob_path": "curated/gobierno-aplicativos/gobernanza-vpaf/ENT-001/documento.docx",
   "posicion": 1,
   "total_chunks": 5
 }
@@ -204,7 +262,103 @@ Cada fragmento en `chunks/` incluye el texto y los metadatos necesarios para que
 
 ---
 
-## 7. Reglas de gobierno del storage
+## 9. Ejemplos de preguntas y cómo los metadatos del ETL las resuelven
+
+Estos son ejemplos reales de preguntas que un usuario del Tec haría en Teams y cómo el repositorio las resuelve usando los metadatos extraídos en el ETL.
+
+---
+
+**"¿Cuál es el proceso aprobado para dar de alta un aplicativo en el Tec?"**
+
+```
+Filtros aplicados:
+  dominio       = "gobierno-aplicativos"
+  tipo          = "Proceso"
+  estado        = "Aprobado"
+
+Vector search sobre: "alta de aplicativo proceso pasos"
+
+Resultado: PRO-003 · "Proceso de alta y baja de aplicativos" · Fase 2 · Aprobado
+Fuente: curated/gobierno-aplicativos/gobernanza-vpaf/PRO-003/documento.docx
+```
+
+---
+
+**"¿Qué decisiones tecnológicas se tomaron en la Fase 1 del proyecto?"**
+
+```
+Filtros aplicados:
+  dominio       = "tecnologia"
+  tipo          = "Decisión"
+  fase          = "Fase 1"
+  estado        IN ["Aprobado", "Publicado"]
+
+Vector search sobre: "decisión tecnológica arquitectura"
+
+Resultados: DEC-001, DEC-002, DEC-005 · ordenados por fecha desc
+```
+
+---
+
+**"¿Qué requerimientos están pendientes de aprobación en gobierno de datos?"**
+
+```
+Filtros aplicados:
+  dominio       = "gobierno-datos"
+  tipo          = "Requerimiento"
+  estado        = "En revisión"
+
+Vector search sobre: "requerimiento pendiente aprobación"
+
+Resultados: REQ-012, REQ-015 · con responsable y fecha de última modificación
+```
+
+---
+
+**"¿Qué evidencias respaldan el entregable ENT-001?"**
+
+```
+Filtros aplicados:
+  activo_id     = "ENT-001"   (o relaciones.tipo = "tiene evidencia")
+
+Sin vector search — consulta directa al grafo de relaciones del metadata.json
+
+Resultado: EVI-010 · "Acta de aprobación taller 15-jul" · Aprobado
+```
+
+---
+
+**"¿Cuáles son los riesgos activos en el proyecto de integraciones?"**
+
+```
+Filtros aplicados:
+  dominio       = "gobierno-integraciones"
+  tipo          = "Riesgo"
+  estado        IN ["Borrador", "En revisión", "Aprobado"]
+
+Vector search sobre: "riesgo activo mitigación"
+
+Resultados: RSG-004, RSG-007 · con responsable y fase
+```
+
+---
+
+**"¿Qué lecciones aprendidas hay sobre el proceso de gobierno de datos?"**
+
+```
+Filtros aplicados:
+  dominio       = "gobierno-datos"
+  tipo          = "Lección aprendida"
+  estado        IN ["Aprobado", "Publicado"]
+
+Vector search sobre: "lección aprendida mejora proceso datos"
+
+Resultados: LEC-002, LEC-006 · con contexto_funcional y fecha
+```
+
+---
+
+## 10. Reglas de gobierno del storage
 
 | Regla | Detalle |
 |---|---|
@@ -217,16 +371,16 @@ Cada fragmento en `chunks/` incluye el texto y los metadatos necesarios para que
 
 ---
 
-## 8. Flujo de vida de un activo
+## 11. Flujo de vida de un activo
 
 ```
 Documento .docx
       │
       ▼
-  raw/{proyecto}/{año-mes}/          ← Se deposita al recibirse
+  raw/{dominio}/{proyecto}/{año-mes}/    ← Se deposita al recibirse
       │
       ▼
-  Clasificador IA-Ready (esta POC)   ← Genera metadata.json
+  Clasificador IA-Ready (esta POC)       ← ETL: extrae y genera metadata.json
       │
       ▼
   Validación humana (human-in-the-loop)
@@ -236,60 +390,54 @@ Documento .docx
       └── Aprobado
             │
             ▼
-        curated/{proyecto}/{ID}/     ← documento.docx + metadata.json
+        curated/{dominio}/{proyecto}/{ID}/   ← documento.docx + metadata.json
             │
             ▼
-        Chunking + Embeddings        ← Azure OpenAI
+        Chunking + Embeddings               ← Azure OpenAI
             │
             ▼
-        indexes/{proyecto}/          ← Azure AI Search
+        indexes/{dominio}/{proyecto}/       ← Azure AI Search
             │
             ▼
-        RAG · Copiloto · Agentes · Teams
+        RAG · Copilot Studio · Teams
 ```
 
 ---
 
-## 9. Estructura de proyecto de ejemplo
-
-Para el proyecto `gobernanza-vpaf` con tres activos registrados:
+## 12. Estructura de ejemplo — Tec de Monterrey
 
 ```
 curated/
-└── gobernanza-vpaf/
-    ├── ENT-001/
-    │   ├── documento.docx
-    │   ├── metadata.json
-    │   └── chunks/
-    │       ├── chunk_001.json
-    │       └── chunk_002.json
-    ├── REQ-004/
-    │   ├── documento.docx
-    │   ├── metadata.json
-    │   └── chunks/
-    │       └── chunk_001.json
-    └── DEC-002/
-        ├── documento.docx
-        ├── metadata.json
-        └── chunks/
-            ├── chunk_001.json
-            └── chunk_002.json
-
-metadata/
-└── gobernanza-vpaf/
-    ├── catalogo.json
-    ├── trazabilidad.json
-    └── taxonomy.json
+├── gobierno-aplicativos/
+│   └── gobernanza-vpaf/
+│       ├── ENT-001/   ← Modelo operativo
+│       ├── PRO-003/   ← Proceso de alta/baja de aplicativos
+│       └── DEC-002/   ← Decisión de arquitectura APM
+│
+├── gobierno-datos/
+│   └── gobernanza-vpaf/
+│       ├── REQ-012/   ← Requerimiento de calidad de datos
+│       └── LEC-002/   ← Lección aprendida sobre catálogo
+│
+├── gobierno-integraciones/
+│   └── gobernanza-vpaf/
+│       ├── RSG-004/   ← Riesgo de integración con Portal DHTI
+│       └── DEC-005/   ← Decisión de contrato de API
+│
+└── tecnologia/
+    └── gobernanza-vpaf/
+        ├── DEC-001/   ← Decisión de stack tecnológico
+        └── CMP-008/   ← Componente OmniSys
 ```
 
 ---
 
-## 10. Próximos pasos
+## 13. Próximos pasos
 
 | Paso | Qué hacer |
 |---|---|
 | 1 | Crear el Azure Blob Storage con los contenedores `raw`, `curated`, `metadata`, `indexes`, `archive` |
 | 2 | Conectar el clasificador IA-Ready para que al validar un activo lo escriba directo en `curated/` |
 | 3 | Implementar el pipeline de chunking sobre `curated/` |
-| 4 | Crear el índice en Azure AI Search con el esquema del chunk (sección 6) |
-| 5 | Conectar el índice a Copilot Studio o la app de consulta |
+| 4 | Crear el índice en Azure AI Search con el esquema del chunk (sección 8) |
+| 5 | Conectar el índice a Copilot Studio y publicar el bot en el canal de Teams del proyecto |
