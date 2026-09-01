@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEC | Clasificador de Activos de Conocimiento IA-Ready</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="cabecera">
+  <div class="contenedor cabecera-fila">
+    <div class="marca">
+      <span class="marca-tec">TEC</span>
+      <div>
+        <h1>Clasificador de activos de conocimiento IA-ready</h1>
+        <p>Transformamos documentos en conocimiento estructurado, contextualizado
+           y preparado para IA.</p>
+      </div>
+    </div>
+    <span class="sello">Procesamiento temporal, sin almacenamiento</span>
+  </div>
+</header>
+
+<main class="contenedor">
+
+  <!-- intro -->
+  <section class="bloque intro">
+    <h2>¿Cómo funciona este clasificador?</h2>
+    <p>Sube cualquier documento Word del proyecto y el sistema lo convierte automáticamente en un <strong>activo de conocimiento IA-ready</strong> con metadatos estructurados, listos para alimentar el Project Knowledge Hub (PKH) del Tec de Monterrey.</p>
+
+    <div class="intro-pasos">
+      <div class="intro-paso">
+        <span class="intro-num">1</span>
+        <div>
+          <strong>Extracción determinista</strong>
+          <p>Antes de llamar a la IA, el sistema detecta con reglas exactas versión, fecha, responsable, estado y confidencialidad directamente del texto, encabezados, tablas y propiedades del archivo.</p>
+        </div>
+      </div>
+      <div class="intro-paso">
+        <span class="intro-num">2</span>
+        <div>
+          <strong>Análisis semántico con Claude</strong>
+          <p>Claude lee el documento completo —incluyendo imágenes y diagramas— y clasifica el activo dentro de las 12 categorías del PKH (ENT, REQ, DEC, RSG…), infiere contexto funcional y técnico, e identifica relaciones con otros activos.</p>
+        </div>
+      </div>
+      <div class="intro-paso">
+        <span class="intro-num">3</span>
+        <div>
+          <strong>Arbitraje y confianza calibrada</strong>
+          <p>Si la IA contradice lo que el texto dice literalmente, gana el texto. Cada campo muestra su nivel de confianza y de dónde salió el valor. Los campos declarativos (estado, responsable, fecha) nunca se inventan.</p>
+        </div>
+      </div>
+      <div class="intro-paso">
+        <span class="intro-num">4</span>
+        <div>
+          <strong>Validación humana</strong>
+          <p>Tú revisas y corriges la ficha generada. Al validar, el activo queda listo para ingresar al catálogo del PKH con trazabilidad completa. El documento original nunca se almacena.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cadena">
+      <span>Documento .docx</span><span>Extracción</span><span>Claude IA</span>
+      <span>Arbitraje</span><span>Ficha PKH</span><span>Knowledge Hub</span>
+    </div>
+  </section>
+
+  <!-- 1 -->
+  <section class="bloque" id="bloque-carga">
+    <h2><span class="paso">1</span> Cargar documento</h2>
+
+    <div class="dropzone" id="dropzone" tabindex="0" role="button"
+         aria-label="Seleccionar un documento Word">
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none"
+           stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <path d="M12 16V4m0 0L8 8m4-4 4 4"/>
+        <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+      </svg>
+      <p class="dz-titulo">Arrastra aquí tu archivo Word o haz clic para elegirlo</p>
+      <p class="dz-nota">Solo .docx, hasta 20 MB. El archivo se analiza en memoria
+         y se elimina al terminar.</p>
+      <input type="file" id="input-archivo" accept=".docx" hidden>
+    </div>
+
+    <div class="archivo" id="archivo" hidden>
+      <div>
+        <strong id="archivo-nombre"></strong>
+        <span id="archivo-meta"></span>
+      </div>
+      <button class="btn-texto" id="btn-quitar" type="button">Quitar</button>
+    </div>
+
+    <button class="btn" id="btn-analizar" type="button" disabled>
+      Analizar documento con IA
+    </button>
+    <p class="error" id="error" hidden></p>
+  </section>
+
+  <!-- 2 -->
+  <section class="bloque" id="bloque-proceso" hidden>
+    <h2><span class="paso">2</span> Procesamiento</h2>
+    <ol class="pipeline" id="pipeline">
+      <li data-fase="recibido">Documento recibido</li>
+      <li data-fase="texto">Texto y estructura extraídos</li>
+      <li data-fase="imagenes">Imágenes identificadas</li>
+      <li data-fase="analisis">Análisis semántico con Claude</li>
+      <li data-fase="metadatos">Metadatos generados</li>
+    </ol>
+  </section>
+
+  <!-- 3 -->
+  <section class="bloque" id="bloque-resultado" hidden>
+    <h2><span class="paso">3</span> Activo de conocimiento</h2>
+
+    <div class="resumen" id="resumen"></div>
+    <p class="ayuda">Cada campo muestra de dónde salió el valor y qué tan
+       respaldado está. Puedes corregir cualquiera antes de validar.</p>
+
+    <div class="ficha" id="ficha"></div>
+
+    <div class="observaciones" id="observaciones" hidden>
+      <h3>Qué debería revisar una persona</h3>
+      <ul id="lista-observaciones"></ul>
+    </div>
+
+    <div class="acciones">
+      <button class="btn" id="btn-validar" type="button">Validar activo IA-ready</button>
+      <button class="btn btn-sec" id="btn-pendiente" type="button">Marcar como pendiente</button>
+      <button class="btn btn-sec" id="btn-json" type="button">Copiar JSON</button>
+    </div>
+    <p class="confirmacion" id="confirmacion" hidden></p>
+  </section>
+
+  <!-- 4 -->
+  <section class="bloque explicacion">
+    <h2>Por qué etiquetamos el documento</h2>
+    <p>Los metadatos permiten que una solución de IA sepa qué es el documento,
+       cuál es su contexto, qué tan vigente es, quién responde por él y con qué
+       otros activos se relaciona. Sin eso, una búsqueda por similitud recupera
+       igual de bien un borrador obsoleto que la versión aprobada.</p>
+    <div class="cadena">
+      <span>Documento plano</span><span>Activo IA-ready</span><span>Knowledge Hub</span>
+      <span>RAG</span><span>Agentes</span><span>Microsoft Teams</span>
+    </div>
+    <p class="nota-final">Esta POC no almacena documentos. Demuestra cómo convertir
+       un documento en un activo de conocimiento mediante IA y validación humana.</p>
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: clasificador-ia-ready
+    env: python
+    runtime: python-3.11.0
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
