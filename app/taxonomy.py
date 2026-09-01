@@ -10,18 +10,6 @@ Todo lo que este aqui se usa DOS veces:
 Si se agrega un valor nuevo, se agrega aqui y se propaga solo.
 """
 
-# ---------------------------------------------------------------------------
-# CAPAS DEL MODELO DE METADATOS
-# ---------------------------------------------------------------------------
-# 1. IDENTIDAD      -> que documento es          (id, version, fecha)
-# 2. NATURALEZA     -> que clase de activo es    (tipo)
-# 3. SEMANTICA      -> de que trata              (descripcion, contexto)
-# 4. GOBIERNO       -> se puede confiar en el    (estado, responsable, confidencialidad)
-# 5. PROCEDENCIA    -> de donde viene            (fuente)
-# 6. GRAFO          -> con que se conecta        (relaciones)
-# 7. CALIDAD        -> que tan solido es         (trazabilidad, confianza, observaciones)
-# ---------------------------------------------------------------------------
-
 # Categorias del PKH con su prefijo de ID
 TIPOS = [
     "Entregable",        # ENT
@@ -70,7 +58,6 @@ CONFIDENCIALIDAD = [
     "No identificado",
 ]
 
-# Tipos de relacion del modelo de trazabilidad PKH
 TIPOS_RELACION = [
     "deriva de",
     "satisface",
@@ -80,27 +67,34 @@ TIPOS_RELACION = [
     "se relaciona con",
 ]
 
-# Como se obtuvo cada valor. Es el campo que hace auditable la clasificacion.
-METODOS = [
-    "extraido",    # literal en el documento o en sus propiedades
-    "derivado",    # calculado a partir de datos literales (p.ej. nombre de archivo)
-    "inferido",    # clasificacion semantica del modelo
-    "no_identificado",
+FASES = [
+    "Fase 1",
+    "Fase 2",
+    "Fase 3",
+    "No identificada",
 ]
 
-# ---------------------------------------------------------------------------
-# CONTRATO POR ATRIBUTO
-# ---------------------------------------------------------------------------
-# metodos_permitidos: si "inferido" NO esta en la lista, el modelo no puede
-# rellenar ese campo por interpretacion; necesita evidencia literal.
-# ---------------------------------------------------------------------------
+TIPOS_ACTIVO = [
+    "documento",
+    "tabla",
+    "diagrama",
+    "registro",
+    "politica",
+]
+
+METODOS = [
+    "extraido",
+    "derivado",
+    "inferido",
+    "no_identificado",
+]
 
 ATRIBUTOS = {
     "id": {
         "capa": "Identidad",
         "valor": "texto",
         "metodos_permitidos": ["extraido", "derivado"],
-        "fallback": None,  # se genera POC-ACT-XXXX
+        "fallback": None,
     },
     "tipo": {
         "capa": "Naturaleza",
@@ -187,22 +181,6 @@ ATRIBUTOS = {
     },
 }
 
-FASES = [
-    "Fase 1",
-    "Fase 2",
-    "Fase 3",
-    "No identificada",
-]
-
-TIPOS_ACTIVO = [
-    "documento",
-    "tabla",
-    "diagrama",
-    "registro",
-    "politica",
-]
-
-# Sub-ejes obligatorios del campo contexto.
 EJES_CONTEXTO = [
     "contexto_funcional",
     "contexto_tecnico",
@@ -211,8 +189,6 @@ EJES_CONTEXTO = [
     "proceso_relacionado",
 ]
 
-# Campos que exigen evidencia literal. Si el modelo los llena sin evidencia,
-# metadata_validator los degrada al fallback.
 CAMPOS_CON_EVIDENCIA_OBLIGATORIA = [
     "version",
     "estado",
@@ -224,9 +200,9 @@ CAMPOS_CON_EVIDENCIA_OBLIGATORIA = [
 CAMPOS_CONFIANZA = list(ATRIBUTOS.keys())
 
 UMBRALES_CONFIANZA = {
-    "alta": 90,      # 90-100
-    "media": 70,     # 70-89
-    "revision": 0,   # 0-69
+    "alta": 90,
+    "media": 70,
+    "revision": 0,
 }
 
 
