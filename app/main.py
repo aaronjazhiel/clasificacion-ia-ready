@@ -17,7 +17,7 @@ import zipfile
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -50,6 +50,12 @@ log = logging.getLogger("poc-ia-ready")
 
 app = FastAPI(title="TEC | Clasificador de Activos de Conocimiento IA-Ready")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+@app.exception_handler(Exception)
+async def _json_error(request: Request, exc: Exception):
+    log.exception("error no manejado")
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
 def _nombre_seguro(nombre: str) -> str:
@@ -107,7 +113,7 @@ async def analizar(file: UploadFile = File(...)):
 
         try:
             parsed = document_parser.parse(ruta_temporal, nombre)
-        except (zipfile.BadZipFile, KeyError, ValueError) as exc:
+        except Exception as exc:
             raise HTTPException(400, f"No se pudo leer el documento: {exc}")
 
         if parsed["n_parrafos"] == 0 and parsed["n_tablas"] == 0 and parsed["n_imagenes"] == 0:

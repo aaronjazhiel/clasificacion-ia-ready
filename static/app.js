@@ -111,8 +111,12 @@ btnAnalizar.addEventListener("click", async () => {
     const datos = new FormData();
     datos.append("file", archivo);
     const res = await fetch("/api/analyze", { method: "POST", body: datos });
-    const json = await res.json();
     clearTimeout(t);
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+      throw new Error(`Error del servidor (${res.status}). El servicio no está disponible, intenta de nuevo en unos minutos.`);
+    }
+    const json = await res.json();
     if (!res.ok) throw new Error(json.detail || "El análisis no se completó.");
 
     FASES.forEach(f => fase(f, "lista"));
@@ -290,6 +294,14 @@ async function enviarValidacion(decision) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ activo, decision }),
   });
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const caja = $("confirmacion");
+    caja.className = "confirmacion pendiente";
+    caja.textContent = `Error del servidor (${res.status}). Intenta de nuevo.`;
+    caja.hidden = false;
+    return;
+  }
   const json = await res.json();
   const caja = $("confirmacion");
   caja.className = "confirmacion" + (decision === "pendiente" ? " pendiente" : "");
