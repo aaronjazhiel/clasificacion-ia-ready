@@ -18,6 +18,9 @@ import os
 import re
 from datetime import datetime
 
+import json as _json
+
+import pdfplumber
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
@@ -327,6 +330,135 @@ def detectar_candidatos(parsed: dict) -> dict:
 
 
 def bloque_para_modelo(parsed: dict, max_chars: int = 45_000) -> str:
+    """Serializa el documento para el prompt, conservando estructura."""
+    partes = [f"NOMBRE DEL ARCHIVO: {parsed['nombre_archivo']}"]
+
+    props = {k: v for k, v in parsed["propiedades"].items() if v}
+    if props:
+        partes.append("PROPIEDADES DEL DOCUMENTO:\n" +
+                      "\n".join(f"  - {k}: {v}" for k, v in props.items()))
+
+    if parsed["encabezados_pies"]:
+        partes.append("ENCABEZADOS Y PIES DE PAGINA:\n" +
+                      "\n".join(f"  - {t}" for t in parsed["encabezados_pies"]))
+
+    if parsed["titulos"]:
+        partes.append("ESTRUCTURA DE SECCIONES:\n" + "\n".join(
+            f"  {'  ' * (t['nivel'] - 1)}- {t['texto']}" for t in parsed["titulos"][:60]))
+
+    partes.append("CONTENIDO:\n" + parsed["texto"])
+
+    for i, tabla in enumerate(parsed["tablas"][:10], start=1):
+        filas = "\n".join("  | " + " | ".join(f) for f in tabla["filas"][:15])
+        partes.append(f"TABLA {i} ({tabla['n_filas']} filas):\n{filas}")
+
+    texto = "\n\n".join(partes)
+    if len(texto) > max_chars:
+        mitad = max_chars // 2
+        texto = (texto[:mitad] +
+                 "\n\n[... contenido intermedio truncado por longitud ...]\n\n" +
+                 texto[-mitad:])
+    return texto
+
+
+# ---------------------------------------------------------------------------
+# Parsers por formato
+# ---------------------------------------------------------------------------
+
+def parse_pdf(ruta: str, nombre_original: str) -> dict:
+    parrafos, tablas = [], []
+    with pdfplumber.open(ruta) as pdf:
+        for page in pdf.pages:
+            texto = page.extract_text() or ""
+            for linea in texto.splitlines():
+                linea = linea.strip()
+                if linea:
+                    parrafos.append(linea)
+            for tabla in (page.extract_tables() or []):
+                filas = [[str(c or "").strip() for c in fila] for fila in tabla if any(fila)]
+                if filas:
+                    tablas.append({"filas": filas, "n_filas": len(filas)})
+
+    portada = "\n".join(parrafos[:25])
+    cuerpo = "\n".join(parrafos)
+    return {
+        "nombre_archivo": nombre_original,
+        "propiedades": {},
+        "encabezados_pies": [],
+        "titulos": [],
+        "parrafos": parrafos,
+        "portada": portada,
+        "texto": cuerpo,
+        "tablas": tablas,
+        "imagenes": [],
+        "n_parrafos": len(parrafos),
+        "n_tablas": len(tablas),
+        "n_imagenes": 0,
+        "n_titulos": 0,
+    }
+
+
+def parse_json_file(ruta: str, nombre_original: str) -> dict:
+    with open(ruta, encoding="utf-8") as f:
+        datos = _json.load(f)
+    texto = _json.dumps(datos, ensure_ascii=False, indent=2)
+    parrafos = [linea.strip() for linea in texto.splitlines() if linea.strip()]
+    return {
+        "nombre_archivo": nombre_original,
+        "propiedades": {},
+        "encabezados_pies": [],
+        "titulos": [],
+        "parrafos": parrafos,
+        "portada": "\n".join(parrafos[:25]),
+        "texto": texto,
+        "tablas": [],
+        "imagenes": [],
+        "n_parrafos": len(parrafos),
+        "n_tablas": 0,
+        "n_imagenes": 0,
+        "n_titulos": 0,
+    }
+
+
+def parse_image(ruta: str, nombre_original: str) -> dict:
+    ext = os.path.splitext(nombre_original)[1].lower()
+    media_type = MEDIA_TYPES.get(ext, "image/jpeg")
+    with open(ruta, "rb") as f:
+        blob = f.read()
+    imagen = {
+        "media_type": media_type,
+        "bytes": len(blob),
+        "base64": base64.b64encode(blob).decode("ascii"),
+    }
+    return {
+        "nombre_archivo": nombre_original,
+        "propiedades": {},
+        "encabezados_pies": [],
+        "titulos": [],
+        "parrafos": [],
+        "portada": "",
+        "texto": "",
+        "tablas": [],
+        "imagenes": [imagen],
+        "n_parrafos": 0,
+        "n_tablas": 0,
+        "n_imagenes": 1,
+        "n_titulos": 0,
+    }
+
+
+def parse(ruta: str, nombre_original: str) -> dict:
+    """Enruta al parser correcto segun la extension."""
+    ext = os.path.splitext(nombre_original)[1].lower()
+    if ext == ".docx":
+        return parse_docx(ruta, nombre_original)
+    if ext == ".pdf":
+        return parse_pdf(ruta, nombre_original)
+    if ext == ".json":
+        return parse_json_file(ruta, nombre_original)
+    if ext in (".png", ".jpg", ".jpeg"):
+        return parse_image(ruta, nombre_original)
+    raise ValueError(f"Formato no soportado: {ext}")
     """Serializa el documento para el prompt, conservando estructura."""
     partes = [f"NOMBRE DEL ARCHIVO: {parsed['nombre_archivo']}"]
 

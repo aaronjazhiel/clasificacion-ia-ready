@@ -29,10 +29,15 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 MAX_MB = 50
 MAX_BYTES = MAX_MB * 1024 * 1024
-EXTENSIONES = {".docx"}
+EXTENSIONES = {".docx", ".pdf", ".json", ".png", ".jpg", ".jpeg"}
 MIME_VALIDOS = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/octet-stream",
+    "application/pdf",
+    "application/json",
+    "text/plain",
+    "image/png",
+    "image/jpeg",
 }
 
 logging.basicConfig(
@@ -79,7 +84,7 @@ async def analizar(file: UploadFile = File(...)):
 
     if extension not in EXTENSIONES:
         raise HTTPException(400, f"Formato no soportado ({extension}). "
-                                 f"Esta POC procesa unicamente .docx.")
+                                 f"Formatos aceptados: .docx, .pdf, .json, .png, .jpg, .jpeg")
     if extension == ".docm" or nombre.lower().endswith(".docm"):
         raise HTTPException(400, "Los archivos con macros (.docm) no se procesan.")
     if file.content_type and file.content_type not in MIME_VALIDOS:
@@ -88,23 +93,23 @@ async def analizar(file: UploadFile = File(...)):
     contenido = await file.read()
     if not contenido:
         raise HTTPException(400, "El archivo llego vacio.")
-    if not contenido.startswith(b"PK"):
+    if extension == ".docx" and not contenido.startswith(b"PK"):
         raise HTTPException(400, "El archivo no es un .docx valido.")
 
     ruta_temporal = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
             tmp.write(contenido)
             ruta_temporal = tmp.name
         del contenido
 
         try:
-            parsed = document_parser.parse_docx(ruta_temporal, nombre)
+            parsed = document_parser.parse(ruta_temporal, nombre)
         except (zipfile.BadZipFile, KeyError, ValueError) as exc:
             raise HTTPException(400, f"No se pudo leer el documento: {exc}")
 
-        if parsed["n_parrafos"] == 0 and parsed["n_tablas"] == 0:
-            raise HTTPException(400, "El documento no contiene texto extraible.")
+        if parsed["n_parrafos"] == 0 and parsed["n_tablas"] == 0 and parsed["n_imagenes"] == 0:
+            raise HTTPException(400, "El documento no contiene texto ni imagenes extraibles.")
 
         candidatos = document_parser.detectar_candidatos(parsed)
         texto = document_parser.bloque_para_modelo(parsed)
