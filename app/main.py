@@ -18,6 +18,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -40,6 +41,7 @@ MIME_VALIDOS = {
     "image/jpeg",
     "application/vnd.ms-powerpoint",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/zip",
 }
 
 logging.basicConfig(
@@ -56,6 +58,16 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 async def _json_error(request: Request, exc: Exception):
     log.exception("error no manejado")
     return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
+@app.exception_handler(HTTPException)
+async def _http_error(request: Request, exc: HTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 def _nombre_seguro(nombre: str) -> str:
