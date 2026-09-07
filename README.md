@@ -1,171 +1,213 @@
-# TEC | Clasificador de Activos de Conocimiento IA-Ready
-
-POC que toma un documento Word, lo analiza temporalmente con Claude y devuelve
-una ficha de metadatos revisable por una persona.
-
-No es un repositorio documental. El archivo no se guarda: se escribe en un
-temporal, se procesa y se elimina en un `finally`. No hay base de datos, no hay
-carpeta de uploads, no hay storage.
+# Clasificador de Activos de Conocimiento IA-Ready
+## Tecnológico de Monterrey · Gobernanza de Aplicativos · VPAF · OmniSys
 
 ---
 
-## 1. Qué demuestra
+## ¿Qué es este repositorio?
 
-```
-DOCUMENTO -> EXTRACCION -> ANALISIS IA -> CLASIFICACION -> METADATOS -> VALIDACION HUMANA -> ACTIVO IA-READY
-```
+Este repositorio es el **clasificador automático de activos de conocimiento** del
+Project Knowledge Hub (PKH) del proyecto de Gobernanza de Aplicativos del
+Tecnológico de Monterrey.
 
-El punto no es "subir un archivo". El punto es que un documento plano se
-convierte en un activo con tipo, contexto, relaciones, vigencia, responsable y
-trazabilidad, para que una solución RAG posterior no dependa solo de la
-similitud semántica del texto.
+Su función es convertir cualquier documento Word del proyecto en un
+**activo IA-ready**: una ficha estructurada con metadatos completos, trazabilidad
+verificada y nivel de confianza calibrado, lista para ingresar al catálogo del PKH
+y ser ingestada en el índice de búsqueda semántica (RAG) sobre Azure AI Search.
+
+Sin este clasificador, un documento plano entra al índice sin contexto. Con él,
+el RAG sabe qué es el documento, en qué fase se generó, quién responde por él,
+qué tan vigente está y con qué otros activos se relaciona — y puede filtrar por
+todo eso antes de recuperarlo.
 
 ---
 
-## 2. Cómo se clasifica
+## Lugar en la arquitectura del PKH
 
-El modelo de metadatos tiene siete capas:
+```
+Documento .docx
+      │
+      ▼
+┌─────────────────────────────────────┐
+│   Clasificador IA-Ready (este repo) │
+│                                     │
+│   1. Extracción determinista        │  ← reglas antes que IA
+│   2. Análisis semántico con Claude  │  ← 12 categorías PKH
+│   3. Arbitraje y confianza          │  ← texto gana sobre inferencia
+│   4. Validación humana              │  ← human-in-the-loop
+└─────────────────────────────────────┘
+      │
+      ▼
+  metadata.json  ←─── ficha PKH completa
+      │
+      ▼
+┌─────────────────────────────────────┐
+│   Azure Blob Storage                │
+│   curated/{proyecto}/{ID-ACTIVO}/   │
+│   ├── documento.docx                │
+│   ├── metadata.json                 │
+│   └── chunks/                       │
+└─────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────┐
+│   Azure AI Search                   │  ← búsqueda híbrida
+│   + Azure OpenAI Embeddings         │  ← vectorización
+└─────────────────────────────────────┘
+      │
+      ▼
+  RAG · Copilot Studio · Teams · Agentes
+```
 
-| Capa | Responde a | Campos |
+---
+
+## Qué produce
+
+Por cada documento analizado genera un `metadata.json` con las 7 capas del
+modelo de metadatos del PKH:
+
+| Capa | Campos | Cómo se obtiene |
 |---|---|---|
-| Identidad | qué documento es | `id`, `version`, `fecha` |
-| Naturaleza | qué clase de activo es | `tipo` |
-| Semántica | de qué trata | `descripcion`, `contexto` |
-| Gobierno | si se puede confiar en él | `estado`, `responsable`, `confidencialidad` |
-| Procedencia | de dónde viene | `fuente` |
-| Grafo | con qué se conecta | `relaciones` |
-| Calidad | qué tan sólido es | `trazabilidad`, `confianza`, `observaciones` |
-
-La regla que sostiene todo está en `app/taxonomy.py`: cada atributo declara qué
-métodos de obtención acepta.
-
-**Atributos interpretables** (`tipo`, `descripcion`, `contexto`, `relaciones`,
-`fuente`): Claude puede deducirlos leyendo, aunque no estén escritos literalmente.
-
-**Atributos declarativos** (`version`, `estado`, `responsable`, `fecha`,
-`confidencialidad`): solo se llenan si el valor aparece escrito. Si no aparece,
-quedan en `"No identificado"`. Un documento bien formateado no está aprobado.
-
-Tres controles hacen que esto se cumpla de verdad y no solo en el prompt:
-
-1. **Detección determinista previa** (`document_parser.detectar_candidatos`).
-   Antes de llamar al modelo, reglas de expresión regular buscan versión, fecha,
-   responsable, estado y confidencialidad en portada, encabezado/pie, tablas,
-   nombre de archivo y propiedades de Word. Lo que se encuentra se marca como
-   `extraido` (leído en el contenido) o `derivado` (metadata del archivo, menos
-   confiable) y se le entrega al modelo como contexto verificado.
-
-2. **Arbitraje en el validador** (`metadata_validator.validar`). Si el analizador
-   leyó "BORRADOR" en la portada y el modelo dice "Aprobado" sin citar evidencia,
-   gana el analizador y queda registrado en `observaciones`. Solo la evidencia
-   `extraido` tiene esa autoridad: una fecha sacada de las propiedades de Word no
-   sobrescribe nada, porque una plantilla reutilizada arrastra la fecha original.
-
-3. **Confianza calibrada por respaldo, no por sensación.** Un campo que quedó en
-   "No identificado" nunca reporta confianza alta; un valor apoyado en pista
-   derivada se topa en 69 para que caiga en "requiere revisión".
-
-Catálogos controlados: `tipo` (19 valores), `estado` (6), `confidencialidad` (5),
-`relaciones[].tipo` (13). El validador hace *match* contra el catálogo, así que
-un valor fuera de lista cae al fallback en vez de contaminar el índice.
+| Identidad | `id`, `version`, `fecha`, `fase` | Extraído del texto o derivado del archivo |
+| Naturaleza | `tipo`, `tipo_activo` | Inferido por Claude dentro del catálogo PKH |
+| Semántica | `descripcion`, `contexto` | Inferido por Claude |
+| Gobierno | `estado`, `responsable`, `confidencialidad` | Solo si aparece escrito — nunca inferido |
+| Procedencia | `fuente` | Extraído o inferido |
+| Grafo | `relaciones` | Extraído o inferido — tipos del modelo PKH |
+| Calidad | `trazabilidad`, `confianza`, `observaciones` | Calculado por el validador |
 
 ---
 
-## 3. Arquitectura
+## Taxonomía del PKH integrada
+
+El clasificador usa exactamente los catálogos definidos en
+`OmniSys_KH2_Plantilla_Metadatos_Taxonomia_Trazabilidad.xlsx`:
+
+**12 categorías de activos**
+
+| Prefijo | Categoría |
+|---|---|
+| ENT | Entregable |
+| REQ | Requerimiento |
+| DEC | Decisión |
+| RSG | Riesgo |
+| SUP | Supuesto |
+| EVI | Evidencia |
+| CRA | Criterio de aceptación |
+| CMP | Componente |
+| PRO | Proceso |
+| RES | Responsable |
+| DEP | Dependencia |
+| LEC | Lección aprendida |
+
+**Estados del ciclo de vida:** Borrador · En revisión · Aprobado · Publicado · Obsoleto
+
+**Confidencialidad:** Pública · Interna _(default)_ · Confidencial · Restringida
+
+**Tipos de relación:** deriva de · satisface · tiene evidencia · depende de · reemplaza · se relaciona con
+
+---
+
+## Reglas que garantizan calidad para el RAG
+
+Estas reglas se aplican con código, no solo con instrucciones al modelo:
+
+1. **Campos declarativos nunca se infieren** — `estado`, `responsable`, `fecha`,
+   `version` y `confidencialidad` solo se llenan si el valor aparece escrito en
+   el documento. Si no aparece: `"No identificado"`.
+
+2. **El texto gana sobre la IA** — si el analizador detectó `"BORRADOR"` en el
+   documento y Claude dice `"Aprobado"`, gana el documento. Un activo mal
+   clasificado contamina el índice.
+
+3. **Confianza calibrada** — un campo sin valor nunca reporta confianza alta.
+   Una pista derivada (propiedades de Word) se topa en 69 para que caiga en
+   "requiere revisión".
+
+4. **Restringida nunca llega al RAG** — activos con datos de menores o sensibles
+   quedan marcados y no se indexan.
+
+5. **Sin responsable + fuente + evidencia → no es Aprobado** — coherente con la
+   regla de oro del PKH.
+
+---
+
+## Arquitectura del código
 
 ```
 /poc-ia-ready
     /app
-        main.py                 FastAPI, endpoints, ciclo de vida del temporal
-        taxonomy.py             catálogos y contrato por atributo (fuente única)
-        document_parser.py      extracción .docx + reglas deterministas
-        claude_service.py       prompt generado desde la taxonomía + llamada API
-        metadata_validator.py   catálogos, arbitraje, confianza
-        models.py               contratos de entrada/salida
+        main.py               FastAPI · endpoints · ciclo de vida del temporal
+        taxonomy.py           catálogos PKH y contrato por atributo
+        document_parser.py    extracción .docx + reglas deterministas
+        claude_service.py     prompt generado desde taxonomy + llamada API
+        metadata_validator.py arbitraje · catálogos · confianza
+        models.py             contratos Pydantic de entrada/salida
     /templates/index.html
     /static/styles.css, app.js
-    .env.example  requirements.txt  README.md
+    .env.example
+    requirements.txt
+    render.yaml
+    ARQUITECTURA_STORAGE.md   estructura Azure Blob Storage + servicios
 ```
 
-`taxonomy.py` se usa dos veces: se inyecta al prompt y se usa para validar la
-respuesta. Agregar un tipo nuevo se hace en un solo archivo.
+`taxonomy.py` es la fuente única de verdad: se inyecta al prompt de Claude
+y se usa para validar su respuesta. Agregar una categoría nueva se hace en
+un solo archivo y se propaga solo.
 
 ---
 
-## 4. Instalación
+## Instalación local
 
-Requiere Python 3.10 o superior (`python --version`). Si no lo tienes:
-descárgalo de python.org y marca "Add Python to PATH" en la instalación.
+Requiere Python 3.11.
 
 ```bash
 cd poc-ia-ready
-
-# entorno virtual
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-
+python3.11 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-### Token de Anthropic
-
-```bash
-cp .env.example .env              # Windows: copy .env.example .env
-```
-
-Edita `.env` y coloca tu token:
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-5
-```
-
-El token se lee solo del lado servidor. Nunca llega al HTML ni al JavaScript.
-`.env` está en `.gitignore`.
-
-### Arrancar
-
-```bash
+cp .env.example .env
+# Edita .env y coloca tu ANTHROPIC_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
 
-Abre <http://localhost:8000>.
+Abre http://localhost:8000.
 
 ---
 
-## 5. Endpoints
+## Endpoints
 
 | Método | Ruta | Qué hace |
 |---|---|---|
-| GET | `/` | pantalla principal |
-| GET | `/api/taxonomy` | catálogos, para que el formulario use listas cerradas |
-| POST | `/api/analyze` | recibe el .docx, extrae, clasifica, devuelve el JSON |
-| POST | `/api/validate` | cierra el ciclo human-in-the-loop; no persiste |
+| GET | `/` | Pantalla principal |
+| GET | `/api/taxonomy` | Catálogos PKH para el formulario |
+| POST | `/api/analyze` | Recibe .docx · extrae · clasifica · devuelve JSON |
+| POST | `/api/validate` | Cierra el ciclo human-in-the-loop |
 
 ---
 
-## 6. Seguridad
+## Seguridad
 
-- El documento se escribe en un `NamedTemporaryFile` y se elimina en un `finally`,
-  incluso si el análisis falla.
-- Validación de extensión, MIME, firma del archivo (`PK`) y tamaño (20 MB).
-- `.docm` rechazado: no se procesan macros.
-- Nombre de archivo saneado.
-- Las imágenes se extraen a base64 en memoria y viajan a la API para enriquecer
-  la clasificación; no se guardan.
-- Los logs registran duración, número de párrafos, tablas, imágenes y campos en
-  revisión. No registran contenido, imágenes, token ni datos extraídos.
+- El documento se escribe en un `NamedTemporaryFile` y se elimina en un `finally`.
+- Validación de extensión, MIME y firma del archivo (`PK`).
+- `.docm` rechazado — no se procesan macros.
+- Activos `Restringida` nunca se envían al índice.
+- Los logs registran duración y conteos. No registran contenido ni tokens.
 
 ---
 
-## 7. Límites conocidos
+## Próximo paso
 
-- Solo `.docx`. La arquitectura deja el hueco para `.pdf`, `.pptx` y `.xlsx`:
-  basta con agregar un parser que devuelva la misma estructura que `parse_docx`.
-- Documentos muy largos se truncan por la mitad antes de enviarse al modelo
-  (`bloque_para_modelo`, 45 000 caracteres). Para documentos grandes conviene
-  clasificar por secciones y consolidar.
-- Se analizan hasta 4 imágenes, las de mayor peso, descartando las menores a
-  12 KB para no gastar tokens en logos.
-- No hay base vectorial. Esta POC termina en el activo validado; la ingesta al
-  índice es la siguiente etapa.
+Con el `metadata.json` validado, el activo está listo para:
+
+1. Escribirse en `curated/{proyecto}/{ID}/` en Azure Blob Storage
+2. Fragmentarse en chunks con contexto heredado de los metadatos
+3. Vectorizarse con Azure OpenAI Embeddings
+4. Indexarse en Azure AI Search con filtros por `estado`, `confidencialidad`,
+   `fase`, `tipo` y `proyecto`
+5. Ser consultado desde Copilot Studio o Microsoft Teams
+
+Ver `ARQUITECTURA_STORAGE.md` para la estructura completa.
+
+---
+
+**OmniSys S.A. de C.V.** · Gobernanza de Aplicativos · VPAF · Tecnológico de Monterrey · uso interno del equipo

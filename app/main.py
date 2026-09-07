@@ -126,7 +126,8 @@ async def analizar(file: UploadFile = File(...)):
         try:
             parsed = document_parser.parse(ruta_temporal, nombre)
         except Exception as exc:
-            raise HTTPException(400, f"No se pudo leer el documento: {exc}")
+            log.exception("Error al parsear documento")
+            raise HTTPException(400, f"No se pudo leer el documento ({type(exc).__name__}): {exc}")
 
         if parsed["n_parrafos"] == 0 and parsed["n_tablas"] == 0 and parsed["n_imagenes"] == 0:
             raise HTTPException(400, "El documento no contiene texto ni imagenes extraibles.")
