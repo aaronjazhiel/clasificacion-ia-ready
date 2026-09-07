@@ -51,10 +51,13 @@ dropzone.addEventListener("drop", (e) => tomarArchivo(e.dataTransfer.files[0]));
 inputArchivo.addEventListener("change", () => tomarArchivo(inputArchivo.files[0]));
 $("btn-quitar").addEventListener("click", limpiar);
 
+const EXTENSIONES_VALIDAS = [".docx", ".pdf", ".json", ".png", ".jpg", ".jpeg", ".pptx"];
+
 function tomarArchivo(f) {
   if (!f) return;
-  if (!f.name.toLowerCase().endsWith(".docx")) {
-    return mostrarError("Esta POC procesa únicamente archivos .docx.");
+  const ext = "." + f.name.toLowerCase().split(".").pop();
+  if (!EXTENSIONES_VALIDAS.includes(ext)) {
+    return mostrarError("Formato no soportado. Formatos aceptados: .docx, .pdf, .json, .png, .jpg, .jpeg, .pptx");
   }
   archivo = f;
   cajaError.hidden = true;

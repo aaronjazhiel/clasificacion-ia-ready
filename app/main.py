@@ -29,7 +29,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 MAX_MB = 50
 MAX_BYTES = MAX_MB * 1024 * 1024
-EXTENSIONES = {".docx", ".pdf", ".json", ".png", ".jpg", ".jpeg"}
+EXTENSIONES = {".docx", ".pdf", ".json", ".png", ".jpg", ".jpeg", ".pptx", ".ppt"}
 MIME_VALIDOS = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/octet-stream",
@@ -38,6 +38,8 @@ MIME_VALIDOS = {
     "text/plain",
     "image/png",
     "image/jpeg",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 logging.basicConfig(
@@ -84,7 +86,7 @@ async def analizar(file: UploadFile = File(...)):
 
     if extension not in EXTENSIONES:
         raise HTTPException(400, f"Formato no soportado ({extension}). "
-                                 f"Formatos aceptados: .docx, .pdf, .json, .png, .jpg, .jpeg")
+                                 f"Formatos aceptados: .docx, .pdf, .json, .png, .jpg, .jpeg, .pptx")
     if extension == ".docm" or nombre.lower().endswith(".docm"):
         raise HTTPException(400, "Los archivos con macros (.docm) no se procesan.")
     if file.content_type and file.content_type not in MIME_VALIDOS:

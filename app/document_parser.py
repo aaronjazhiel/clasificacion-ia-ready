@@ -21,6 +21,7 @@ from datetime import datetime
 import json as _json
 
 import pdfplumber
+from pptx import Presentation as _Presentation
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
@@ -420,6 +421,53 @@ def parse_json_file(ruta: str, nombre_original: str) -> dict:
     }
 
 
+def parse_pptx(ruta: str, nombre_original: str) -> dict:
+    prs = _Presentation(ruta)
+    parrafos, imagenes = [], []
+    for i, slide in enumerate(prs.slides, start=1):
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    texto = para.text.strip()
+                    if texto:
+                        parrafos.append(texto)
+            if hasattr(shape, "image"):
+                try:
+                    blob = shape.image.blob
+                    ext = "." + shape.image.ext.lower()
+                    media = MEDIA_TYPES.get(ext)
+                    if media and MIN_BYTES_IMAGEN <= len(blob) <= MAX_BYTES_IMAGEN:
+                        imagenes.append({
+                            "media_type": media,
+                            "bytes": len(blob),
+                            "base64": base64.b64encode(blob).decode("ascii"),
+                        })
+                except Exception:
+                    pass
+        if slide.has_notes_slide:
+            nota = slide.notes_slide.notes_text_frame.text.strip()
+            if nota:
+                parrafos.append(f"[Nota diapositiva {i}] {nota}")
+    imagenes.sort(key=lambda x: x["bytes"], reverse=True)
+    imagenes = imagenes[:MAX_IMAGENES]
+    portada = "\n".join(parrafos[:25])
+    return {
+        "nombre_archivo": nombre_original,
+        "propiedades": {},
+        "encabezados_pies": [],
+        "titulos": [],
+        "parrafos": parrafos,
+        "portada": portada,
+        "texto": "\n".join(parrafos),
+        "tablas": [],
+        "imagenes": imagenes,
+        "n_parrafos": len(parrafos),
+        "n_tablas": 0,
+        "n_imagenes": len(imagenes),
+        "n_titulos": 0,
+    }
+
+
 def parse_image(ruta: str, nombre_original: str) -> dict:
     ext = os.path.splitext(nombre_original)[1].lower()
     media_type = MEDIA_TYPES.get(ext, "image/jpeg")
@@ -456,6 +504,8 @@ def parse(ruta: str, nombre_original: str) -> dict:
         return parse_pdf(ruta, nombre_original)
     if ext == ".json":
         return parse_json_file(ruta, nombre_original)
+    if ext in (".pptx", ".ppt"):
+        return parse_pptx(ruta, nombre_original)
     if ext in (".png", ".jpg", ".jpeg"):
         return parse_image(ruta, nombre_original)
     raise ValueError(f"Formato no soportado: {ext}")
