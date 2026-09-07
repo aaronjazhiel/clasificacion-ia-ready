@@ -368,17 +368,26 @@ def bloque_para_modelo(parsed: dict, max_chars: int = 45_000) -> str:
 
 def parse_pdf(ruta: str, nombre_original: str) -> dict:
     parrafos, tablas = [], []
-    with pdfplumber.open(ruta) as pdf:
-        for page in pdf.pages:
-            texto = page.extract_text() or ""
-            for linea in texto.splitlines():
-                linea = linea.strip()
-                if linea:
-                    parrafos.append(linea)
-            for tabla in (page.extract_tables() or []):
-                filas = [[str(c or "").strip() for c in fila] for fila in tabla if any(fila)]
-                if filas:
-                    tablas.append({"filas": filas, "n_filas": len(filas)})
+    try:
+        with pdfplumber.open(ruta) as pdf:
+            for page in pdf.pages:
+                try:
+                    texto = page.extract_text() or ""
+                    for linea in texto.splitlines():
+                        linea = linea.strip()
+                        if linea:
+                            parrafos.append(linea)
+                except Exception:
+                    pass
+                try:
+                    for tabla in (page.extract_tables() or []):
+                        filas = [[str(c or "").strip() for c in fila] for fila in tabla if any(fila)]
+                        if filas:
+                            tablas.append({"filas": filas, "n_filas": len(filas)})
+                except Exception:
+                    pass
+    except Exception as exc:
+        raise ValueError(f"No se pudo abrir el PDF: {exc}")
 
     portada = "\n".join(parrafos[:25])
     cuerpo = "\n".join(parrafos)
